@@ -328,6 +328,7 @@ handle_call({install,Filename}, _From, State) ->
 			     function=>?FUNCTION_NAME,
 			     line=>?LINE,
 			     args=>[Filename],
+			     reason=>Reason,
 			     stacktrace=>[Stacktrace]}]}
 	   end,
     Reply=case Result of
@@ -355,6 +356,7 @@ handle_call({uninstall,Filename}, _From, State) ->
 			     function=>?FUNCTION_NAME,
 			     line=>?LINE,
 			     args=>[Filename],
+			     reason=>Reason,
 			     stacktrace=>[Stacktrace]}]}
 	   end,
     Reply=case Result of
@@ -364,44 +366,6 @@ handle_call({uninstall,Filename}, _From, State) ->
 	      {error,ErrorReason}->
 		  NewState=State,
 		  {error,ErrorReason}
-	  end,
-    {reply, Reply,NewState};
-
-handle_call({load_start,Filename}, _From, State) ->
-    SpecFile=filename:join(State#state.specs_dir,Filename),
-    Result=try lib_application:load_start(SpecFile,State#state.application_maps) of
-	      {ok,R1,R2}->
-		   {ok,R1,R2};
-	      {error,ErrorR}->
-		   {error,["M:F [A]) with reason",lib_application,load_start,[Filename],"Reason=", ErrorR]}
-	   catch
-	       Event:Reason:Stacktrace ->
-		   {error,[#{event=>Event,
-			     module=>?MODULE,
-			     function=>?FUNCTION_NAME,
-			     line=>?LINE,
-			     args=>[Filename],
-			     stacktrace=>[Stacktrace]}]}
-	   end,
-    Reply=case Result of
-	      {ok,Node,NewApplicationMaps}->
-		  NewState=State#state{application_maps=NewApplicationMaps},
-		  {ok,Node};
-	      {error,ErrorReason}->
-		  NewState=State,
-		  {error,ErrorReason}
-	  end,
-    {reply, Reply,NewState};
-
-handle_call({stop_unload,Filename}, _From, State) ->
-    SpecFile=filename:join(State#state.specs_dir,Filename),
-    Reply=case lib_application:stop_unload(SpecFile,State#state.application_maps) of
-	      {stopped,NewApplcationMaps}->
-		  NewState=State#state{application_maps=NewApplcationMaps},
-		  ok;
-	      {error,Reason}->
-		  NewState=State,
-		  {error,Reason}
 	  end,
     {reply, Reply,NewState};
 
@@ -437,81 +401,6 @@ handle_call({get_active_applications}, _From, State) ->
 		  {error,Reason}
 	  end,
     {reply, Reply,State};
-
-
-handle_call({start_node,Filename}, _From, State) ->
-    SpecFile=filename:join(State#state.specs_dir,Filename),
-    Reply=case lib_application:start_node(SpecFile,State#state.application_maps) of
-	      {ok,Node,NewApplcationMaps}->
-		  NewState=State#state{application_maps=NewApplcationMaps},
-		  {ok,Node};
-	      {error,Reason}->
-		  NewState=State,
-		  {error,Reason}
-	  end,
-    {reply, Reply,NewState};
-
-
-handle_call({stop_node,Filename}, _From, State) ->
-    SpecFile=filename:join(State#state.specs_dir,Filename),
-    Reply=case lib_application:stop_node(SpecFile,State#state.application_maps) of
-	      {ok,NewApplcationMaps}->
-		  NewState=State#state{application_maps=NewApplcationMaps},
-		  ok;
-	      {error,Reason}->
-		  NewState=State,
-		  {error,Reason}
-	  end,
-    {reply, Reply,NewState};
-
-handle_call({load,Filename}, _From, State) ->
-    SpecFile=filename:join(State#state.specs_dir,Filename),
-    Reply=case lib_application:load(SpecFile,State#state.application_maps) of
-	      {ok,NewApplcationMaps}->
-		  NewState=State#state{application_maps=NewApplcationMaps},
-		  ok;
-	      {error,Reason}->
-		  NewState=State,
-		  {error,Reason}
-	  end,
-    {reply, Reply,NewState};
-
-handle_call({start,Filename}, _From, State) ->
-    SpecFile=filename:join(State#state.specs_dir,Filename),
-    Reply=case lib_application:start(SpecFile,State#state.application_maps) of
-	      {ok,NewApplcationMaps}->
-		  NewState=State#state{application_maps=NewApplcationMaps},
-		  ok;
-	      {error,Reason}->
-		  NewState=State,
-		  {error,Reason}
-	  end,
-    {reply, Reply,NewState};
-
-handle_call({stop,Filename}, _From, State) ->
-    SpecFile=filename:join(State#state.specs_dir,Filename),
-    Reply=case lib_application:stop(SpecFile,State#state.application_maps) of
-	      {ok,NewApplcationMaps}->
-		  NewState=State#state{application_maps=NewApplcationMaps},
-		  ok;
-	      {error,Reason}->
-		  NewState=State,
-		  {error,Reason}
-	  end,
-    {reply, Reply,NewState};
-
-handle_call({unload,Filename}, _From, State) ->
-    SpecFile=filename:join(State#state.specs_dir,Filename),
-    Reply=case lib_application:unload(SpecFile,State#state.application_maps) of
-	      {ok,NewApplcationMaps}->
-		  NewState=State#state{application_maps=NewApplcationMaps},
-		  ok;
-	      {error,Reason}->
-		  NewState=State,
-		  {error,Reason}
-	  end,
-    {reply, Reply,NewState};
-
 
 
 %%--------------------------------------------------------------------
@@ -561,9 +450,9 @@ handle_info(timeout, State) ->
     %%Clean up application dirs and Mnesia dirs
     {ok,Files}=file:list_dir("."),
     ApplicationDirs=lib_application:get_application_dirs(Files),
-    [{Dir,file:del_dir_r(Dir)}||Dir<-ApplicationDirs],
+    _=[{Dir,file:del_dir_r(Dir)}||Dir<-ApplicationDirs],
     MnesiaDirs=lib_application:get_mnesia_dirs(Files),
-    [{Dir,file:del_dir_r(Dir)}||Dir<-MnesiaDirs],
+    _=[{Dir,file:del_dir_r(Dir)}||Dir<-MnesiaDirs],
 
     file:del_dir_r(?SpecsDir),
     case lib_git:update_repo(?SpecsDir) of

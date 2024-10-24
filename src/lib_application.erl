@@ -238,7 +238,6 @@ get_wanted_applications(SpecDir)->
 get_active_applications([])->
     {ok,[]};     
 get_active_applications(ApplicationMaps)->
-    io:format("ApplicationMaps ~p~n",[{ApplicationMaps,?MODULE,?LINE}]),      
     File_Nodes_Apps=[{maps:get(filename,Map),maps:get(node,Map),maps:get(app,Map)}||Map<-ApplicationMaps,
 										    installed=:=maps:get(status,Map)],
     Active=[File||{File,Node,App}<-File_Nodes_Apps,
