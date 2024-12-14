@@ -12,23 +12,24 @@
 -include("application.hrl").
 
 -define(CheckDelay,1000).
--define(NumCheck,60).
+-define(NumCheck,20).
  
 %% API
 
 -export([
+	 install_build/2,
 
 	 install/2,
 	 uninstall/2,
 	 
 	 get_application_dirs/1,
-	  get_mnesia_dirs/1,
+	 get_mnesia_dirs/1,
 
 	 load_start/2,
 	 stop_unload/2,
 	 get_wanted_applications/1,	 
 	 get_active_applications/1,
-
+	 
 	 start_node/2,
 	 stop_node/2,
 	 load/2,
@@ -46,6 +47,72 @@
 -export([
 
 	]).
+
+%%--------------------------------------------------------------------
+%% @doc
+%%
+%% @end
+%%--------------------------------------------------------------------
+install_build(SpecFile,ApplicationMaps)->
+ case is_installed(SpecFile,ApplicationMaps) of
+     true->
+	 {error,["Allready installed",SpecFile]};
+     false->
+	 case file:consult(SpecFile) of
+	     {error,[Reason]}->
+		 {error,[Reason]};
+	     {ok,[Map]}->
+		 ISA=?GetISA,
+		 GitUrl=case ISA of
+			    "aarch64"->
+				maps:get(git_url_aarch64,Map);
+			    "x86_64"->
+				maps:get(git_url_x86_64,Map)
+			end,
+		 NodeName=maps:get(nodename,Map),
+	%	 ApplicationName=maps:get(application_name,Map),
+	%	 TarFileName=maps:get(tar_filename,Map),
+		 TarDir=maps:get(tar_dir,Map),
+		 ApplicationDir=maps:get(application_dir,Map),
+		
+		 Node=lib_vm:get_node(NodeName),
+
+		 file:del_dir_r(ApplicationDir),
+		 ok=file:make_dir(ApplicationDir),
+		 CloneResult=os:cmd("git clone "++" "++GitUrl++" "++ApplicationDir),
+		 ?LOG_NOTICE("CloneResult",[CloneResult,ApplicationDir,SpecFile]),
+		 %% Add build a 
+		 % 
+		 Compile=os:cmd("rebar3 compile -d  "++ApplicationDir),
+		 ?LOG_NOTICE("Compile",[Compile]),
+		 os:cmd("rebar3 release -d "++ApplicationDir),
+	     	 os:cmd("rebar3 as prod tar -d "++ApplicationDir),
+		 {ok,Cwd}=file:get_cwd(),
+		 PathTarDir=filename:join([Cwd,ApplicationDir,TarDir]),
+		 io:format("PathTarDir ~p~n",[{PathTarDir,?MODULE,?FUNCTION_NAME,?LINE}]),
+						% rm -rf tar_dir;
+		 % mkdir tar_dir;
+		 % cp _build/prod/rel/$(appl)/*.tar.gz tar_dir/$(appl).tar.gz;
+		 % rm -rf _build;
+		 %%
+		 
+	%	 TarFileFullPath=filename:join([ApplicationDir,TarDir,TarFileName]),
+	%	 os:cmd("tar -zxvf "++TarFileFullPath++" "++"-C"++" "++ApplicationDir),
+		 
+	%	 rpc:call(Node,init,stop,[],5000),
+	%	 true=lib_vm:check_stopped(Node),
+						%    io:format("~p~n",[{?MODULE,?FUNCTION_NAME,?LINE}]),
+		 %% Start application to test and check node started
+	%	 []=os:cmd(?Daemon(ApplicationDir,ApplicationName)),
+						%   io:format("~p~n",[{?MODULE,?FUNCTION_NAME,?LINE}]),
+	%	 true=check_appl_started(Node,list_to_atom(ApplicationName)),
+		 Map1=maps:update(node,Node,Map),
+		 Map2=maps:update(status,installed,Map1),
+		 Map3=maps:update(created,{date(),time()},Map2),
+		 {ok,Node,[Map3|ApplicationMaps]}
+	 end
+ end.
+
 
 %%--------------------------------------------------------------------
 %% @doc
@@ -86,9 +153,14 @@ install(SpecFile,ApplicationMaps)->
 		 true=lib_vm:check_stopped(Node),
 						%    io:format("~p~n",[{?MODULE,?FUNCTION_NAME,?LINE}]),
 		 %% Start application to test and check node started
-		 []=os:cmd(?Daemon(ApplicationDir,ApplicationName)),
+		StartResult=os:cmd(?Daemon(ApplicationDir,ApplicationName)),
 						%   io:format("~p~n",[{?MODULE,?FUNCTION_NAME,?LINE}]),
-		 true=check_appl_started(Node,list_to_atom(ApplicationName)),
+		 case check_appl_started(list_to_atom(ApplicationName)) of
+		     true->
+			 ?LOG_NOTICE("Application started on Node ",[ApplicationName,Node]);
+		     false->
+			 ?LOG_WARNING("Failed to start Application started on Node ",[ApplicationName,Node,StartResult])
+		 end,
 		 Map1=maps:update(node,Node,Map),
 		 Map2=maps:update(status,installed,Map1),
 		 Map3=maps:update(created,{date(),time()},Map2),
@@ -118,16 +190,15 @@ end.
 %%
 %% @end
 %%--------------------------------------------------------------------
-check_appl_started(Node,App)->
-    check_appl_started(Node,App,?NumCheck,?CheckDelay,false).
+check_appl_started(App)->
+    check_appl_started(App,?NumCheck,?CheckDelay,false).
 
-check_appl_started(_Node,_App,_NumCheck,_CheckDelay,true)->
+check_appl_started(_App,_NumCheck,_CheckDelay,true)->
     true;
-check_appl_started(_Node,_App,0,_CheckDelay,Boolean)->
+check_appl_started(_App,0,_CheckDelay,Boolean)->
     Boolean;
-check_appl_started(Node,App,NumCheck,CheckDelay,false)->
-    io:format("~p~n",[{NumCheck,Node,App}]),
-    case rpc:call(Node,App,ping,[],5000) of
+check_appl_started(App,NumCheck,CheckDelay,false)->
+    case sd:call(App,{ping},5000) of
 	pong->
 	    N=NumCheck,
 	    Boolean=true;
@@ -136,8 +207,7 @@ check_appl_started(Node,App,NumCheck,CheckDelay,false)->
 	    N=NumCheck-1,
 	    Boolean=false
     end,
- %   io:format("NumCheck ~p~n",[{NumCheck,?MODULE,?LINE,?FUNCTION_NAME}]),
-    check_appl_started(Node,App,N,CheckDelay,Boolean).
+    check_appl_started(App,N,CheckDelay,Boolean).
 
 
 %%--------------------------------------------------------------------
@@ -242,7 +312,8 @@ get_active_applications(ApplicationMaps)->
 										    installed=:=maps:get(status,Map)],
     Active=[File||{File,Node,App}<-File_Nodes_Apps,
 		  pong=:=net_adm:ping(Node),
-		  pong=:=rpc:call(Node,App,ping,[],5000)],
+		  pong=:=sd:call(App,{ping},5000)],
+		%  pong=:=rpc:call(Node,App,ping,[],5000)],
     {ok,Active}.     
     
     

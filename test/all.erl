@@ -48,7 +48,6 @@ setup()->
   
     ok=application:start(test_appl),
     pong=log:ping(),
-    pong=rd:ping(),
     pong=application_server:ping(),
 
     ok.

@@ -33,6 +33,7 @@
 %%--------------------------------------------------------------------
 start()->
     io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME}]),
+ %   ok=test_install(),
     ok=test_intent(),
 
     loop(),
@@ -56,7 +57,7 @@ loop()->
 -define(AppToStop,"kvs_glurk_test.application").
 
 test_intent()->
-    io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME}]),
+    io:format("Start ~p~n",[{?MODULE,?FUNCTION_NAME,?LINE}]),
 
     {ok,WantedApplicationFiles}=application_server:get_wanted_applications(),
     {ok,[]}=application_server:get_active_applications(),

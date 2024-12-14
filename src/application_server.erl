@@ -23,6 +23,7 @@
 %% API
 
 -export([
+	 install_build/1,
 	 install/1,
 	 uninstall/1,
 
@@ -74,6 +75,15 @@
 %%%===================================================================
 %%% API
 %%%===================================================================
+%%--------------------------------------------------------------------
+%% @doc
+%% 
+%% @end
+%%--------------------------------------------------------------------
+-spec install_build(Filename :: string()) -> 
+	  {ok,Node::node()} | {error,Reason::term()}.
+install_build(Filename) ->
+    gen_server:call(?SERVER,{install_build,Filename},infinity).
 %%--------------------------------------------------------------------
 %% @doc
 %% 
@@ -314,6 +324,34 @@ init([]) ->
 	  {stop, Reason :: term(), NewState :: term()}.
 
 
+handle_call({install_build,Filename}, _From, State) ->
+    SpecFile=filename:join(State#state.specs_dir,Filename),
+    Result=try lib_application:install_build(SpecFile,State#state.application_maps) of
+	      {ok,R1,R2}->
+		   {ok,R1,R2};
+	      {error,ErrorR}->
+		   {error,["M:F [A]) with reason",lib_application,install_build,[Filename],"Reason=", ErrorR]}
+	   catch
+	       Event:Reason:Stacktrace ->
+		   {error,[#{event=>Event,
+			     module=>?MODULE,
+			     function=>?FUNCTION_NAME,
+			     line=>?LINE,
+			     args=>[Filename],
+			     reason=>Reason,
+			     stacktrace=>[Stacktrace]}]}
+	   end,
+    Reply=case Result of
+	      {ok,Node,NewApplicationMaps}->
+		  NewState=State#state{application_maps=NewApplicationMaps},
+		  {ok,Node};
+	      {error,ErrorReason}->
+		  NewState=State,
+		  {error,ErrorReason}
+	  end,
+    {reply, Reply,NewState};
+
+
 handle_call({install,Filename}, _From, State) ->
     SpecFile=filename:join(State#state.specs_dir,Filename),
     Result=try lib_application:install(SpecFile,State#state.application_maps) of
@@ -457,12 +495,12 @@ handle_info(timeout, State) ->
     file:del_dir_r(?SpecsDir),
     case lib_git:update_repo(?SpecsDir) of
 	{error,["Dir eexists ",_RepoDir]}->
-	    ok=case lib_git:clone(?RepoGit) of
-		   ok->
-		       ?LOG_NOTICE("Repo dir didnt existed so a succesful cloned action is executed",[?SpecsDir]);
-		   {error,Reason}->
-		       ?LOG_WARNING("Failed during clone action ",[Reason])
-	       end;
+	    case lib_git:clone(?RepoGit) of
+		ok->
+		    ?LOG_NOTICE("Repo dir didnt existed so a succesful cloned action is executed",[?SpecsDir]);
+		{error,Reason}->
+		    ?LOG_WARNING("Failed during clone action ",[Reason])
+	    end;
 	{error,["Already updated ","application_specs"]}->
 	    ok;
 	{error,Reason}->
@@ -498,7 +536,6 @@ handle_info({timeout,check_repo_update}, State) ->
 
 handle_info(Info, State) ->
     ?LOG_WARNING("Unmatched signal",[Info]),
-    io:format("unmatched_signal ~p~n",[{Info,?MODULE,?LINE}]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------

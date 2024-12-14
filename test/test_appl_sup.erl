@@ -32,8 +32,6 @@ init([]) ->
     ChildSpecs = [
 		  #{id=>log,
 		    start=>{log,start_link,[]}},
-		  #{id=>rd,
-		    start=>{rd,start_link,[]}},
 		   #{id=>application_server,
 		    start=>{application_server,start_link,[]}}
 		 ],
